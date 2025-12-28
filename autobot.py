@@ -18,7 +18,7 @@ time.sleep(delay_detik)
 
 # Setup AI (Menggunakan Gemini 3 Flash sesuai request)
 genai.configure(api_key=os.environ['GEMINI_API_KEY'])
-model = genai.GenerativeModel('gemini-3-flash')
+model = genai.GenerativeModel('gemini-3-flash-preview')
 
 def get_hot_trend():
     """Mencari Berita Paling Panas di Indonesia Saat Ini"""
