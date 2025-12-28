@@ -1,0 +1,32 @@
+name: Auto Post Harian
+
+on:
+  schedule:
+    # Jalan setiap hari jam 07:00 pagi WIB (00:00 UTC)
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Tombol Manual Run
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Ambil File Repo
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Library
+        run: pip install google-generativeai google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+
+      - name: Jalankan Bot
+        env:
+          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+          BLOGGER_ID: ${{ secrets.BLOGGER_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python autobot.py
