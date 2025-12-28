@@ -2,68 +2,95 @@ import os
 import random
 import time
 import urllib.parse
+import requests
+import xml.etree.ElementTree as ET
 import google.generativeai as genai
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from datetime import datetime
 
 # --- KONFIGURASI ---
-# 1. Delay acak (Anti-Deteksi)
-delay_detik = random.randint(30, 300) # Tunggu 30 detik - 5 menit
-print(f"⏳ Menunggu {delay_detik} detik agar terlihat natural...")
+# Delay acak agar tidak terdeteksi spam
+delay_detik = random.randint(30, 300)
+print(f"⏳ Menunggu {delay_detik} detik...")
 time.sleep(delay_detik)
 
-# 2. Setup AI
+# Setup AI (Menggunakan Gemini 3 Flash sesuai request)
 genai.configure(api_key=os.environ['GEMINI_API_KEY'])
-model = genai.GenerativeModel('gemini-3-flash-preview')
+model = genai.GenerativeModel('gemini-3-flash')
 
-def get_random_topic():
-    topik_list = [
-        "Tutorial Termux Hacking Tools Pemula",
-        "Cara Config Cisco Router Dasar",
-        "Masa Depan AI Artificial Intelligence",
-        "Trik Internet Gratis Termux",
-        "Belajar Jaringan Komputer Dasar",
-        "Cara Membuat Bot WhatsApp Python"
-    ]
-    return random.choice(topik_list)
+def get_hot_trend():
+    """Mencari Berita Paling Panas di Indonesia Saat Ini"""
+    print("🔥 Mencari topik yang lagi viral...")
+    try:
+        # Mengambil RSS Google Trends Indonesia
+        url = "https://trends.google.co.id/trends/trendingsearches/daily/rss?geo=ID"
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            root = ET.fromstring(response.content)
+            items = root.findall('.//item')
+            
+            # AMBIL 3 TERATAS SAJA (Yang paling panas/baru)
+            # Kita acak sedikit dari 3 besar biar variatif
+            top_3 = items[:3]
+            if top_3:
+                chosen = random.choice(top_3)
+                judul = chosen.find('title').text
+                trafik = chosen.find('ht:approx_traffic', namespaces={'ht': 'https://trends.google.co.id/trends/trendingsearches/daily'}).text
+                print(f"✅ Topik Panas Ditemukan: {judul} ({trafik}+ pencarian)")
+                return judul
+    except Exception as e:
+        print(f"⚠️ Gagal ambil Trends: {e}")
+    
+    return None
+
+def get_backup_topic():
+    # Cadangan kalau Google Trends error
+    return random.choice([
+        "Cara Menggunakan AI untuk Pemula",
+        "Review Gadget Terbaru 2025",
+        "Tips Keamanan Cyber untuk HP Android",
+        "Tutorial Coding Python Dasar"
+    ])
 
 def generate_content(topik):
-    print(f"🤖 Sedang menulis artikel tentang: {topik}...")
+    print(f"🤖 Gemini-3 sedang menulis tentang: {topik}...")
     
-    # Encode topik untuk URL gambar
     img_keyword = urllib.parse.quote(topik)
+    img_thumb = f"https://image.pollinations.ai/prompt/realistic%20news%20headline%20{img_keyword}?width=1000&height=448&nologo=true"
     
-    # URL Gambar AI (Gratis via Pollinations)
-    img_thumb = f"https://image.pollinations.ai/prompt/realistic%20tech%20blog%20thumbnail%20{img_keyword}?width=1000&height=448&nologo=true"
-    img_body = f"https://image.pollinations.ai/prompt/coding%20hacking%20{img_keyword}?width=600&height=400&nologo=true"
-
     prompt = f"""
-    Buatkan artikel blog seru tentang "{topik}" dalam Bahasa Indonesia.
+    Kamu adalah jurnalis berita online yang cepat dan akurat.
+    Buatkan ARTIKEL BERITA VIRAL tentang "{topik}" untuk audiens Indonesia.
     
-    GAYA BAHASA (WAJIB):
-    - Santai, gaul, seperti ngobrol sama teman (pake kata 'Gue/Aku', 'Lo/Kalian', 'Gaskeun', 'Worth it').
-    - Jangan kaku kayak robot! Masukkan opini pribadi atau curhatan dikit.
-    - Minimal 1000 karakter.
+    INSTRUKSI KHUSUS:
+    1. Judul: Harus HEBOH tapi tetap faktual (Clickbait yang bertanggung jawab).
+    2. Intro: Langsung bahas "Kenapa ini viral HARI INI?".
+    3. Gaya Bahasa: Ringkas, Padat, Informatif (seperti portal berita detik/kompas).
+    4. Panjang: Minimal 500 kata.
     
-    STRUKTUR HTML (WAJIB):
-    1. Awal postingan (Hidden Thumbnail): 
-       <div class="separator" style="display: none; text-align: center;"><img src="{img_thumb}" /></div>
-    2. Paragraf pembuka yang 'hook' (bikin penasaran).
-    3. Penjelasan materi (Pake Heading <h2>).
-    4. Gambar Tengah: <div class="separator" style="clear: both; text-align: center;"><img src="{img_body}" style="border-radius: 10px; margin: 20px auto; display: block;" /></div>
-    5. Tutorial step-by-step (jika ada).
-    6. Kesimpulan & Ajakan Share.
+    STRUKTUR HTML (Body Only):
+    1. <div class="separator" style="display: none; text-align: center;"><img src="{img_thumb}" /></div>
+    2. Paragraf Pembuka (Breaking News).
+    3. <h2>Kronologi / Fakta Utama</h2>
+    4. Penjelasan detail 5W+1H.
+    5. <h2>Reaksi Netizen & Dampaknya</h2>
+    6. Kesimpulan.
     
-    OUTPUT: HANYA KODE HTML BAGIAN ISI ARTIKEL SAJA.
+    Output: Hanya kode HTML isi artikel.
     """
     
-    response = model.generate_content(prompt)
-    return response.text
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        print(f"❌ Error AI: {e}")
+        return "<p>Maaf, konten gagal dibuat.</p>"
 
 def post_to_blogger(title, content):
-    print("🚀 Menghubungkan ke Blogger...")
-    
+    print("🚀 Posting ke Blogger...")
     creds = Credentials(
         None,
         refresh_token=os.environ['BLOGGER_REFRESH_TOKEN'],
@@ -73,24 +100,31 @@ def post_to_blogger(title, content):
     )
     
     if not creds.valid:
+        from google.auth.transport.requests import Request
         creds.refresh(Request())
         
     service = build('blogger', 'v3', credentials=creds)
     
+    # Tambahkan Timestamp di judul agar unik jika topik sama
+    waktu = datetime.now().strftime("%H:%M")
+    
     body = {
         'kind': 'blogger#post',
-        'title': f"{title} - Edisi Belajar",
+        'title': f"{title} (Update {waktu})",
         'content': content,
-        'labels': ['Tutorial', 'Teknologi', 'AutoPost']
+        'labels': ['Berita Viral', 'Trending Topic', 'News']
     }
     
     try:
         post = service.posts().insert(blogId=os.environ['BLOGGER_ID'], body=body).execute()
-        print(f"✅ SUKSES! Lihat di: {post['url']}")
+        print(f"✅ SUKSES TAYANG: {post['url']}")
     except Exception as e:
         print(f"❌ Gagal Posting: {e}")
 
 if __name__ == "__main__":
-    topik = get_random_topic()
-    isi_html = generate_content(topik)
-    post_to_blogger(topik, isi_html)
+    topik = get_hot_trend()
+    if not topik:
+        topik = get_backup_topic()
+        
+    isi = generate_content(topik)
+    post_to_blogger(topik, isi)
