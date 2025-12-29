@@ -2,6 +2,7 @@ import os
 import random
 import time
 import urllib.parse
+import re
 import requests
 import xml.etree.ElementTree as ET
 import google.generativeai as genai
@@ -10,6 +11,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
 # --- KONFIGURASI ---
+# Delay acak (30-120 detik) agar aman dari deteksi spam
 delay_detik = random.randint(30, 120)
 print(f"⏳ Menunggu {delay_detik} detik agar natural...")
 time.sleep(delay_detik)
@@ -30,6 +32,7 @@ def get_hot_trend():
             if top_items:
                 chosen = random.choice(top_items)
                 judul = chosen.find('title').text
+                # Bersihkan karakter aneh di judul awal
                 judul = judul.replace('"', '').replace("'", "")
                 print(f"✅ Topik Ditemukan: {judul}")
                 return judul
@@ -88,17 +91,32 @@ def generate_content_package(topik):
         print(f"❌ Error AI: {e}")
         return None, None
 
+def create_image_slug(text):
+    """
+    Mengubah judul menjadi format nama file SEO Friendly (Slug).
+    Contoh: "Timnas Indonesia Menang!" -> "timnas-indonesia-menang"
+    """
+    # 1. Hapus semua simbol selain huruf dan angka
+    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
+    # 2. Ganti spasi dengan tanda strip (-)
+    text = re.sub(r'\s+', '-', text)
+    # 3. Ubah jadi huruf kecil semua
+    return text.lower()[:80] # Batasi panjang agar tidak error
+
 def post_to_blogger(title, content, topik_asli):
     print(f"🚀 Memposting: {title}")
     
-    img_keyword = urllib.parse.quote(topik_asli)
+    # --- PROSES PEMBUATAN NAMA GAMBAR (SEO SLUG) ---
+    image_slug = create_image_slug(topik_asli)
+    
     seed1 = random.randint(1, 9999)
     seed2 = random.randint(1, 9999)
     
-    # --- 1. THUMBNAIL (HIDDEN) ---
-    # Wajib 1000x448 sesuai request
-    # Di-hidden (display: none) agar tidak muncul ganda, tapi terdeteksi Google/Blogger
-    thumb_url = f"https://image.pollinations.ai/prompt/realistic%20news%20thumbnail%20about%20{img_keyword}?width=1000&height=448&nologo=true&seed={seed1}"
+    # --- 1. THUMBNAIL (HIDDEN) - 1000x448 ---
+    # Prompt: foto-berita-[slug-topik]
+    # Hasil URL: .../prompt/foto-berita-timnas-juara?width...
+    thumb_prompt = f"foto-berita-{image_slug}"
+    thumb_url = f"https://image.pollinations.ai/prompt/{thumb_prompt}?width=1000&height=448&nologo=true&seed={seed1}"
     
     html_thumbnail = f"""
     <div class="separator" style="display: none;">
@@ -106,9 +124,10 @@ def post_to_blogger(title, content, topik_asli):
     </div>
     """
     
-    # --- 2. GAMBAR ILUSTRASI (VISIBLE - TENGAH KONTEN) ---
-    # Ukuran proporsional enak dilihat (1000x600)
-    body_img_url = f"https://image.pollinations.ai/prompt/illustration%20blog%20image%20about%20{img_keyword}?width=1000&height=600&nologo=true&seed={seed2}"
+    # --- 2. GAMBAR ILUSTRASI (VISIBLE) - 1000x600 ---
+    # Prompt: ilustrasi-blog-[slug-topik]
+    body_prompt = f"ilustrasi-blog-{image_slug}"
+    body_img_url = f"https://image.pollinations.ai/prompt/{body_prompt}?width=1000&height=600&nologo=true&seed={seed2}"
     
     html_body_image = f"""
     <div class="separator" style="clear: both; text-align: center; margin: 30px 0;">
@@ -119,32 +138,21 @@ def post_to_blogger(title, content, topik_asli):
     """
     
     # --- LOGIKA PENYISIPAN GAMBAR DI TENGAH (SMART INJECTION) ---
-    # Kita cari posisi tengah artikel, lalu cari paragraf terdekat
     titik_tengah = len(content) // 2
-    
-    # Cari penutup paragraf </p> terdekat SETELAH titik tengah
     posisi_sisip = content.find('</p>', titik_tengah)
     
     if posisi_sisip != -1:
-        # Sisipkan setelah paragraf tengah
-        posisi_sisip += 4 # Panjang tag </p>
+        posisi_sisip += 4 
         isi_final_body = content[:posisi_sisip] + html_body_image + content[posisi_sisip:]
     else:
-        # Fallback 1: Jika tidak ketemu, coba cari Heading kedua (<h2>)
-        posisi_sisip = content.find('<h2>', 100) # Cari h2 tapi jangan yang paling awal
+        # Fallback: Cari Heading kedua
+        posisi_sisip = content.find('<h2>', 100)
         if posisi_sisip != -1:
              isi_final_body = content[:posisi_sisip] + html_body_image + content[posisi_sisip:]
         else:
-             # Fallback 2: Terpaksa taruh setelah paragraf pertama (biar tidak paling atas banget)
-             posisi_sisip = content.find('</p>')
-             if posisi_sisip != -1:
-                 posisi_sisip += 4
-                 isi_final_body = content[:posisi_sisip] + html_body_image + content[posisi_sisip:]
-             else:
-                 # Sangat jarang terjadi: Artikel tanpa paragraf
-                 isi_final_body = html_body_image + content
+             isi_final_body = html_body_image + content
 
-    # GABUNGKAN SEMUA: Thumbnail Hidden + Isi Artikel Ber-Gambar
+    # GABUNGKAN
     final_content = html_thumbnail + isi_final_body
 
     creds = Credentials(
