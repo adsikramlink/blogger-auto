@@ -11,7 +11,6 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
 # --- KONFIGURASI ---
-# Delay acak (30-120 detik) agar aman dari deteksi spam
 delay_detik = random.randint(30, 120)
 print(f"⏳ Menunggu {delay_detik} detik agar natural...")
 time.sleep(delay_detik)
@@ -32,7 +31,6 @@ def get_hot_trend():
             if top_items:
                 chosen = random.choice(top_items)
                 judul = chosen.find('title').text
-                # Bersihkan karakter aneh di judul awal
                 judul = judul.replace('"', '').replace("'", "")
                 print(f"✅ Topik Ditemukan: {judul}")
                 return judul
@@ -50,73 +48,63 @@ def get_backup_topic():
     ])
 
 def generate_content_package(topik):
-    print(f"🤖 Gemini sedang menulis artikel untuk: {topik}...")
+    print(f"🤖 Gemini sedang menulis artikel & prompt gambar untuk: {topik}...")
     
     prompt = f"""
     Bertindaklah sebagai Ahli SEO dan Jurnalis Senior.
-    Buatkan ARTIKEL BLOG LENGKAP tentang "{topik}".
+    Tugasmu ada 3:
+    1. Buat Judul Clickbait (Bahasa Indonesia).
+    2. Buat Keyword Gambar (BAHASA INGGRIS, MAX 3 KATA, Visual Deskriptif).
+    3. Buat Isi Artikel (Bahasa Indonesia).
     
-    ATURAN JUDUL:
-    - Clickbait, Viral, tapi Relevan (Max 60 karakter).
-    - JANGAN pakai tanda kutip.
+    Topik: "{topik}"
     
     ATURAN ISI (HTML Body Only):
     - Gunakan tag <h2> dan <h3>.
     - Paragraf pertama mengandung keyword "{topik}".
-    - Gaya bahasa: Santai, Mengalir, Enak dibaca.
     - Panjang: Minimal 600 kata.
     
-    STRUKTUR:
-    1. Paragraf Pembuka (Hook).
-    2. <h2>Apa itu {topik}?</h2>
-    3. <h2>Fakta Utama / Kronologi</h2>
-    4. <h2>Kenapa Viral?</h2>
-    5. Kesimpulan.
-    
     WAJIB GUNAKAN FORMAT OUTPUT PEMISAH (|||):
-    JUDUL_SEO_KAMU ||| KODE_HTML_ISI_ARTIKEL
+    JUDUL_SEO_INDONESIA ||| KEYWORD_GAMBAR_INGGRIS ||| KODE_HTML_ISI_ARTIKEL
+    
+    Contoh Output:
+    Heboh Bocah SD Jago Coding! ||| kid coding laptop ||| <p>Berita mengejutkan datang dari...</p>
     """
     
     try:
         response = model.generate_content(prompt)
         raw_text = response.text
         
-        if "|||" in raw_text:
-            judul, isi = raw_text.split("|||", 1)
-            return judul.strip(), isi.strip()
+        # Pisahkan menjadi 3 bagian
+        parts = raw_text.split("|||")
+        if len(parts) == 3:
+            judul = parts[0].strip()
+            img_prompt = parts[1].strip()
+            isi = parts[2].strip()
+            return judul, img_prompt, isi
         else:
-            return f"Berita Viral: {topik}", raw_text
+            # Fallback jika format salah
+            return f"Berita Viral: {topik}", "news technology", raw_text
             
     except Exception as e:
         print(f"❌ Error AI: {e}")
-        return None, None
+        return None, None, None
 
-def create_image_slug(text):
-    """
-    Mengubah judul menjadi format nama file SEO Friendly (Slug).
-    Contoh: "Timnas Indonesia Menang!" -> "timnas-indonesia-menang"
-    """
-    # 1. Hapus semua simbol selain huruf dan angka
-    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
-    # 2. Ganti spasi dengan tanda strip (-)
-    text = re.sub(r'\s+', '-', text)
-    # 3. Ubah jadi huruf kecil semua
-    return text.lower()[:80] # Batasi panjang agar tidak error
-
-def post_to_blogger(title, content, topik_asli):
+def post_to_blogger(title, img_prompt_en, content):
     print(f"🚀 Memposting: {title}")
+    print(f"🎨 Prompt Gambar (EN): {img_prompt_en}")
     
-    # --- PROSES PEMBUATAN NAMA GAMBAR (SEO SLUG) ---
-    image_slug = create_image_slug(topik_asli)
+    # --- BERSIHKAN PROMPT GAMBAR ---
+    # Pastikan hanya huruf angka dan spasi, lalu encode ke URL
+    clean_prompt = re.sub(r'[^a-zA-Z0-9\s]', '', img_prompt_en)
+    encoded_prompt = urllib.parse.quote(clean_prompt)
     
     seed1 = random.randint(1, 9999)
     seed2 = random.randint(1, 9999)
     
     # --- 1. THUMBNAIL (HIDDEN) - 1000x448 ---
-    # Prompt: foto-berita-[slug-topik]
-    # Hasil URL: .../prompt/foto-berita-timnas-juara?width...
-    thumb_prompt = f"foto-berita-{image_slug}"
-    thumb_url = f"https://image.pollinations.ai/prompt/{thumb_prompt}?width=1000&height=448&nologo=true&seed={seed1}"
+    # Kita pakai model 'flux' atau 'turbo' biar lebih stabil
+    thumb_url = f"https://image.pollinations.ai/prompt/realistic%20photo%20{encoded_prompt}?width=1000&height=448&model=flux&nologo=true&seed={seed1}"
     
     html_thumbnail = f"""
     <div class="separator" style="display: none;">
@@ -125,9 +113,7 @@ def post_to_blogger(title, content, topik_asli):
     """
     
     # --- 2. GAMBAR ILUSTRASI (VISIBLE) - 1000x600 ---
-    # Prompt: ilustrasi-blog-[slug-topik]
-    body_prompt = f"ilustrasi-blog-{image_slug}"
-    body_img_url = f"https://image.pollinations.ai/prompt/{body_prompt}?width=1000&height=600&nologo=true&seed={seed2}"
+    body_img_url = f"https://image.pollinations.ai/prompt/illustration%20art%20{encoded_prompt}?width=1000&height=600&model=flux&nologo=true&seed={seed2}"
     
     html_body_image = f"""
     <div class="separator" style="clear: both; text-align: center; margin: 30px 0;">
@@ -137,7 +123,7 @@ def post_to_blogger(title, content, topik_asli):
     </div>
     """
     
-    # --- LOGIKA PENYISIPAN GAMBAR DI TENGAH (SMART INJECTION) ---
+    # --- LOGIKA PENYISIPAN GAMBAR DI TENGAH ---
     titik_tengah = len(content) // 2
     posisi_sisip = content.find('</p>', titik_tengah)
     
@@ -145,7 +131,7 @@ def post_to_blogger(title, content, topik_asli):
         posisi_sisip += 4 
         isi_final_body = content[:posisi_sisip] + html_body_image + content[posisi_sisip:]
     else:
-        # Fallback: Cari Heading kedua
+        # Fallback
         posisi_sisip = content.find('<h2>', 100)
         if posisi_sisip != -1:
              isi_final_body = content[:posisi_sisip] + html_body_image + content[posisi_sisip:]
@@ -187,9 +173,9 @@ if __name__ == "__main__":
     if not topik:
         topik = get_backup_topic()
         
-    judul, isi = generate_content_package(topik)
+    judul, prompt_gambar, isi = generate_content_package(topik)
     
-    if judul and isi:
-        post_to_blogger(judul, isi, topik)
+    if judul and prompt_gambar and isi:
+        post_to_blogger(judul, prompt_gambar, isi)
     else:
         print("❌ Gagal generate konten.")
