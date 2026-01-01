@@ -46,7 +46,7 @@ def get_backup_topic():
     """Topik cadangan jika Google Trends tidak bisa diakses"""
     return random.choice([
         "Tutorial Python untuk Pemula Lengkap",
-        "Cara Menghasilkan Uang dari Blog di Tahun 2025",
+        "Cara Menghasilkan Uang dari Blog di Tahun 2026",
         "Rekomendasi HP Gaming Murah Spek Dewa",
         "Tips Menjaga Keamanan Data Pribadi di Internet",
         "Masa Depan AI dan Dampaknya bagi Lapangan Pekerjaan"
