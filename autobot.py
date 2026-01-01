@@ -13,7 +13,7 @@ from googleapiclient.discovery import build
 
 # --- KONFIGURASI ---
 delay_detik = random.randint(30, 120)
-print(f"⏳ Menunggu {delay_detik} detik agar natural...")
+print(f"⏳ Menunggu {delay_detik} detik agar aktivitas natural...")
 time.sleep(delay_detik)
 
 genai.configure(api_key=os.environ['GEMINI_API_KEY'])
@@ -49,22 +49,32 @@ def get_backup_topic():
     ])
 
 def generate_content_package(topik):
-    print(f"🤖 Gemini sedang meracik konten dan prompt gambar untuk: {topik}...")
+    print(f"🤖 Gemini sedang meracik konten kreatif untuk: {topik}...")
     
+    # PROMPT BARU: ANTI-TERBONGKAR & LEBIH VARIASI
     prompt = f"""
     Bertindaklah sebagai Ahli SEO dan Jurnalis Senior.
     Tugasmu:
-    1. Buat Judul Clickbait (Bahasa Indonesia).
+    1. Buat Judul Clickbait yang UNIK dan BERVARIASI (Bahasa Indonesia).
     2. Buat Keyword Gambar (BAHASA INGGRIS, MAX 4 KATA, Visual Deskriptif).
     3. Buat Isi Artikel (Bahasa Indonesia).
     
     Topik: "{topik}"
     
+    ATURAN KHUSUS JUDUL (PENTING!):
+    - DILARANG MEMULAI JUDUL DENGAN KATA: "TERBONGKAR", "RAHASIA", "WOW", "HEBOH", "GEGER".
+    - Gunakan variasi gaya judul seperti:
+      a. Pertanyaan (Contoh: "Benarkah...?", "Kenapa...?")
+      b. Angka/Listicle (Contoh: "5 Alasan...", "7 Fakta...")
+      c. Solusi/Benefit (Contoh: "Cara Mudah...", "Tips Ampuh...")
+      d. Peringatan (Contoh: "Hati-hati...", "Jangan Lakukan...")
+    - Maksimal 60 karakter.
+    
     ATURAN ISI (HTML Body Only):
     - Gunakan tag <h2> dan <h3>.
     - Paragraf pertama mengandung keyword "{topik}".
     - Panjang: Minimal 600 kata.
-    - Pastikan menggunakan tag <p> untuk setiap paragraf.
+    - Gunakan tag <p> untuk setiap paragraf.
     
     WAJIB GUNAKAN FORMAT OUTPUT PEMISAH INI (|||):
     JUDUL_SEO_INDONESIA ||| KEYWORD_GAMBAR_INGGRIS ||| KODE_HTML_ISI_ARTIKEL
@@ -81,51 +91,65 @@ def generate_content_package(topik):
             isi = "|||".join(parts[2:]).strip()
             return judul, img_prompt, isi
         else:
-            return f"Berita Viral: {topik}", "technology news illustration", raw_text
+            return f"Berita Update: {topik}", "technology news illustration", raw_text
             
     except Exception as e:
         print(f"❌ Error AI Gemini: {e}")
         return None, None, None
 
 def upload_to_imgbb(image_url, name_slug):
-    """Upload ke ImgBB dengan Retry logic"""
+    """
+    Upload ke ImgBB dengan Logika RETRY (Cuba Lagi) jika gagal.
+    """
     api_key = os.environ.get('IMGBB_API_KEY')
     if not api_key:
         print("⚠️ IMGBB_API_KEY tidak ditemukan.")
         return image_url
 
-    print(f"☁️ Mencoba download gambar dari AI...")
-    try:
-        # Timeout dinaikkan jadi 60 detik karena AI kadang lama melukis
-        img_response = requests.get(image_url, timeout=60)
-        
-        if img_response.status_code == 200:
-            print("   -> Download sukses, mulai upload ke ImgBB...")
-            img_b64 = base64.b64encode(img_response.content)
-            
-            upload_url = "https://api.imgbb.com/1/upload"
-            payload = {
-                "key": api_key,
-                "image": img_b64,
-                "name": name_slug[:30]
-            }
-            # Timeout upload juga dinaikkan
-            res = requests.post(upload_url, data=payload, timeout=60)
-            
-            if res.status_code == 200:
-                data = res.json()
-                hosted_url = data['data']['url']
-                print(f"✅ Berhasil Upload: {hosted_url}")
-                return hosted_url
-            else:
-                print(f"⚠️ Gagal Upload ImgBB: {res.text}")
-        else:
-            print(f"⚠️ Gagal download dari AI (Status: {img_response.status_code})")
-            
-    except Exception as e:
-        print(f"⚠️ Error Proses Gambar: {e}")
+    print(f"☁️ Memulai proses download & upload...")
     
-    print("⚠️ Menggunakan link asli (Fallback).")
+    # SISTEM RETRY: Mencoba maksimal 3 kali
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"   -> Percobaan ke-{attempt} mendownload gambar...")
+            
+            # Timeout 120 detik (2 Menit) - Memberi masa AI melukis
+            img_response = requests.get(image_url, timeout=120)
+            
+            if img_response.status_code == 200:
+                print("   -> Download sukses! Mengirim ke ImgBB...")
+                img_b64 = base64.b64encode(img_response.content)
+                
+                upload_url = "https://api.imgbb.com/1/upload"
+                payload = {
+                    "key": api_key,
+                    "image": img_b64,
+                    "name": name_slug[:30]
+                }
+                
+                # Timeout upload 60 detik
+                res = requests.post(upload_url, data=payload, timeout=60)
+                
+                if res.status_code == 200:
+                    data = res.json()
+                    hosted_url = data['data']['url']
+                    print(f"✅ SUKSES UPLOAD: {hosted_url}")
+                    return hosted_url 
+                else:
+                    print(f"⚠️ Gagal Upload API ImgBB: {res.text}")
+            else:
+                print(f"⚠️ Gagal download dari AI (Status: {img_response.status_code})")
+                
+        except Exception as e:
+            print(f"⚠️ Error pada percobaan {attempt}: {e}")
+        
+        # Jika gagal, tunggu 15 detik sebelum cuba lagi
+        if attempt < max_retries:
+            print("⏳ Menunggu 15 detik sebelum mencuba lagi...")
+            time.sleep(15)
+
+    print("⚠️ Gagal total setelah 3x percubaan. Menggunakan link asal.")
     return image_url
 
 def post_to_blogger(title, img_prompt_en, content):
@@ -141,14 +165,15 @@ def post_to_blogger(title, img_prompt_en, content):
     raw_thumb_url = f"https://image.pollinations.ai/prompt/realistic%20photo%20{encoded_prompt}?width=1000&height=448&model=flux&nologo=true&seed={seed1}"
     raw_body_url = f"https://image.pollinations.ai/prompt/illustration%20art%20{encoded_prompt}?width=1000&height=600&model=flux&nologo=true&seed={seed2}"
     
-    # --- UPLOAD KE IMGBB (DENGAN JEDA) ---
-    print("1️⃣ Memproses Thumbnail...")
+    # --- UPLOAD KE IMGBB (Urutan Sabar) ---
+    
+    print("1️⃣ [THUMBNAIL] Sedang diproses...")
     final_thumb_url = upload_to_imgbb(raw_thumb_url, f"thumb-{file_slug}")
     
-    print("⏳ Istirahat 10 detik agar server gambar tidak overload...")
-    time.sleep(10) 
+    print("⏳ Rehat 15 saat agar server ImgBB tidak menolak...")
+    time.sleep(15) 
     
-    print("2️⃣ Memproses Gambar Ilustrasi...")
+    print("2️⃣ [GAMBAR BODY] Sedang diproses...")
     final_body_url = upload_to_imgbb(raw_body_url, f"body-{file_slug}")
     
     # --- SUSUN HTML ---
@@ -170,7 +195,7 @@ def post_to_blogger(title, img_prompt_en, content):
     <br/>
     """
     
-    # --- LOGIKA V11: SISIPKAN SETELAH PARAGRAF PERTAMA ---
+    # --- LOGIKA PENYISIPAN (SETELAH PARAGRAF PERTAMA) ---
     posisi_sisip = content.find('</p>')
     
     if posisi_sisip != -1:
